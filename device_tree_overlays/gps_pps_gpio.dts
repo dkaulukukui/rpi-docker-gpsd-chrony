@@ -11,7 +11,7 @@
         __overlay__ {
             pps {
                 compatible = "pps-gpio";
-                gpios = <&gpio TEGRA194_MAIN_GPIO(Q, 5) GPIO_ACTIVE_HIGH>;
+                gpios = <&gpio 440 0>;
                 /* J12 pin 7 = MCLK05 = GPIO3_PQ.05 */
                 assert-falling-edge;  /* rising edge capture: assert on rising */
                 status = "okay";
