@@ -1,0 +1,36 @@
+# .github/workflows/build-dtbo.yml
+name: Build Device Tree Overlay
+
+on:
+  push:
+    branches: 
+      - main
+      - JETSON_XAVIER_NX
+    paths: ['**.dts']
+  pull_request:
+    paths: ['**.dts']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install device-tree-compiler
+        run: sudo apt-get update && sudo apt-get install -y device-tree-compiler
+
+      - name: Verify dtc version (>= 1.6.0 recommended)
+        run: dtc --version
+
+      - name: Compile overlay
+        working-directory: device_tree_overlays
+        run: |
+          mkdir -p build
+          dtc -@ -I dts -O dtb -o build/pps-gpio.dtbo gps_pps_gpio.dts
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: pps-gpio-dtbo
+          path: device_tree_overlays/build/*.dtbo
