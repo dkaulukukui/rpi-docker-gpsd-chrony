@@ -2,14 +2,18 @@
 /plugin/;
 
 / {
-    compatible = "toradex,verdin-imx8mp";
+    compatible = "nvidia,p3509-0000+p3668-0000",  /* Jetson Xavier NX Dev Kit */
+                 "nvidia,jetson-xavier-nx-devkit",
+                 "nvidia,tegra194";
 
     fragment@0 {
         target-path = "/";
         __overlay__ {
             pps {
                 compatible = "pps-gpio";
-                gpios = <&gpio1 6 0>; // Mallow X19 pin 24, Verdin GPIO_4, SODIMM 212, GPIO1_IO06, GPIO_ACTIVE_HIGH
+                gpios = <&gpio TEGRA194_MAIN_GPIO(Q, 5) GPIO_ACTIVE_HIGH>;
+                /* J12 pin 7 = MCLK05 = GPIO3_PQ.05 */
+                assert-falling-edge;  /* rising edge capture: assert on rising */
                 status = "okay";
             };
         };
