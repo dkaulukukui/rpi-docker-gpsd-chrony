@@ -3,7 +3,9 @@ name: Build Device Tree Overlay
 
 on:
   push:
-    branches: [main]
+    branches: 
+      - main
+      - JETSON_XAVIER_NX
     paths: ['**.dts']
   pull_request:
     paths: ['**.dts']
