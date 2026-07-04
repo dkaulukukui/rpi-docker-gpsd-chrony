@@ -1,310 +1,306 @@
-# rpi-docker-gpsd-chrony
+# docker-gpsd-chrony
 
-This Docker image facilitates the running of the Linux GPS daemon (gpsd) on a 
-Raspberry Pi connected to an instance of Chrony. `gpsd` is a daemon 
-that monitors one or more GPSes or AIS receivers attached to a host computer 
-through serial or USB ports. `Chrony` is an NTP service.  
+A containerized GPS-disciplined stratum-1 NTP time server for Linux single
+board computers (SBCs).
 
-Together these services allow for a GPS 1PPS corrected timeserver. 
+This Docker image runs the Linux GPS daemon (`gpsd`) together with `chrony`.
+`gpsd` reads NMEA sentences from a GPS/GNSS receiver (serial or USB) and
+timestamps the receiver's pulse-per-second (PPS) signal via the kernel PPS
+subsystem. It hands both to `chrony` through a shared-memory refclock;
+`chrony` disciplines the system clock to the PPS edge and serves NTP to the
+network.
 
-## Resources: 
+Together these services provide a GPS 1PPS corrected time server with
+microsecond-level accuracy on any Linux SBC that can expose:
 
+- a serial or USB connection to a GNSS receiver, and
+- a GPIO pin bound to the kernel `pps-gpio` driver (for the PPS signal).
 
+Tested platforms:
 
-Repo:  [dkaulukukui/rpi-docker-gpsd-chrony](https://github.com/dkaulukukui/rpi-docker-gpsd-chrony) <br>
-Docker Hub: [dkaulukukui/rpi-docker-gpsd-chrony](https://hub.docker.com/repository/docker/dkaulukukui/rpi-docker-gpsd-chrony/general) <br>
-Source Tutorial:  [Revisiting Microsecond Accurate NTP for Raspberry Pi with GPS PPS in 2025 - Austin's Nerdy Things](https://austinsnerdythings.com/2025/02/14/revisiting-microsecond-accurate-ntp-for-raspberry-pi-with-gps-pps-in-2025/) <br>
-GPSD references:  [GPSD Time Service HOWTO](https://gpsd.gitlab.io/gpsd/gpsd-time-service-howto.html) <br>
-PPS tools resources: https://github.com/redlab-i/pps-tools?tab=readme-ov-file <br>
-Chrony resource: https://chrony-project.org/ <br>
-Raspberry Pi configuration: [UART Confguration](https://www.raspberrypi.com/documentation/computers/configuration.html#primary-uart) <br>
+| Platform | GPS device | PPS device | Notes |
+|---|---|---|---|
+| Raspberry Pi 4 (Debian 12) | `/dev/ttyAMA0` | `/dev/pps0` | UART + `pps-gpio` overlay |
+| Toradex Verdin iMX8M Plus (Mallow carrier, Torizon OS) | `/dev/ttyACM0` | `/dev/pps0` | USB GNSS + GPIO PPS overlay (see [device_tree_overlays](./device_tree_overlays/)) |
+| Toradex Apalis (Ixora carrier) | `/dev/apalis-uart2` | `/dev/pps1` | UART + GPIO PPS |
+| NVIDIA Jetson Xavier NX | `/dev/ttyACM0` | `/dev/pps0` | prebuilt image tag `xavier-nx` |
 
+Example `config.env` settings for each platform are included (commented out)
+in [config.env](./config.env).
+
+## Resources
+
+Repo: [ARL-at-UH/docker-gpsd-chrony](https://github.com/ARL-at-UH/docker-gpsd-chrony) <br>
+Docker Hub: [arluhdev/docker-gpsd-chrony](https://hub.docker.com/repository/docker/arluhdev/docker-gpsd-chrony/general) <br>
+
+**GPSD / chrony / PPS:**
+
+- [GPSD Time Service HOWTO](https://gpsd.gitlab.io/gpsd/gpsd-time-service-howto.html)
+- [chrony project documentation](https://chrony-project.org/)
+- [pps-tools](https://github.com/redlab-i/pps-tools)
+- Source tutorial: [Revisiting Microsecond Accurate NTP for Raspberry Pi with GPS PPS in 2025 — Austin's Nerdy Things](https://austinsnerdythings.com/2025/02/14/revisiting-microsecond-accurate-ntp-for-raspberry-pi-with-gps-pps-in-2025/)
+
+**Raspberry Pi:**
+
+- [Raspberry Pi UART configuration](https://www.raspberrypi.com/documentation/computers/configuration.html#primary-uart)
+- [Raspberry Pi device tree overlays](https://www.raspberrypi.com/documentation/computers/configuration.html#device-trees-overlays-and-parameters)
+
+**Toradex (Apalis / Verdin):**
+
+- [Apalis SoM family](https://developer.toradex.com/hardware/apalis-som-family/)
+- [Verdin SoM family](https://developer.toradex.com/hardware/verdin-som-family/)
+- [Device tree overlays overview](https://developer.toradex.com/software/linux-resources/device-tree/device-tree-overlays-overview/)
+- [UART on Toradex Linux BSPs](https://developer.toradex.com/software/linux-resources/linux-features/uart-linux/)
+- [GPIO on Toradex Linux BSPs](https://developer.toradex.com/software/linux-resources/linux-features/gpio-linux/)
+- This repo's [Verdin iMX8MP PPS overlay + instructions](./device_tree_overlays/)
+
+**NVIDIA Jetson:**
+
+- [Jetson Linux documentation](https://docs.nvidia.com/jetson/)
+- [Jetson Linux Developer Guide — kernel and device tree customization](https://docs.nvidia.com/jetson/archives/r36.3/DeveloperGuide/SD/Kernel.html)
+- Expansion header configuration tool: `sudo /opt/nvidia/jetson-io/jetson-io.py`
+- [Jetson Xavier NX GPIO header pinout (JetsonHacks)](https://jetsonhacks.com/nvidia-jetson-xavier-nx-gpio-header-pinout/)
 
 ## Prerequisites
 
-- Raspberry Pi 4 with Docker installed.
-    - tested on RPI 4 Model B (8GB RAM) 
-    - tested on Debian 12 (Bookworm) with Kernal version 6.6.51+rpt-rpi-v8 (64 bit)
-    - tested on Docker version 27.5.1 [64-bit Debian Docker installation](https://docs.docker.com/engine/install/debian/)
-- GPS module (timing model preferred)
-    - tested on [Sparkfun Zed-9P](https://www.sparkfun.com/sparkfun-gps-rtk-sma-breakout-zed-f9p-qwiic.html)
-- 5 wires needed – +VDC/RX/TX/GND/PPS
+- A Linux SBC with:
+  - Docker installed (with `docker compose`)
+  - a kernel providing the PPS subsystem and `pps-gpio` client
+    (`CONFIG_PPS`, `CONFIG_PPS_CLIENT_GPIO`) — standard on Raspberry Pi OS,
+    Torizon OS, and Jetson Linux
+- A GPS/GNSS module with a PPS output (timing-grade module preferred)
+  - tested with the [SparkFun ZED-F9P](https://www.sparkfun.com/sparkfun-gps-rtk-sma-breakout-zed-f9p-qwiic.html)
+- 5 wires for a UART-connected receiver — VDC / RX / TX / GND / PPS
+  (USB-connected receivers still need the PPS line wired to a GPIO)
+- An antenna position with a clear sky view
 
-## Setup and Configuration Steps
+## Setup overview
 
-### 1. Copy github project 
+The flow is the same on every platform; only step 1 is platform-specific:
 
-```bash
-git clone https://github.com/dkaulukukui/rpi-docker-gpsd-chrony
-```
+1. **Enable the serial port and PPS GPIO** on the host (see
+   [Platform setup](#platform-setup) below). After this step the host must
+   have a GPS device node (e.g. `/dev/ttyAMA0`, `/dev/ttyACM0`,
+   `/dev/apalis-uart2`) and a PPS node (e.g. `/dev/pps0`).
+2. **Disable competing time services** on the host:
 
-### 2. Setup Raspi GPIO
-1. Enable the PPS dignal on Pin 18. In /boot/firmware/config.txt add the below to a new line.
+   ```bash
+   sudo systemctl stop systemd-timesyncd
+   sudo systemctl disable systemd-timesyncd
+   ```
+
+   (Also disable any host-side `chronyd` or `ntpd`.)
+3. **Wire the GPS module**: receiver TX → SBC RX, receiver RX → SBC TX,
+   PPS → the GPIO you configured, plus power and ground. Check your
+   module's voltage requirements first.
+4. **Configure the container**: set `GPS_DEVICE`, `PPS_DEVICE`, and
+   `GPS_SPEED` in [config.env](./config.env), and list the same device
+   nodes under `devices:` in [compose.yaml](./compose.yaml).
+5. **Build or pull the image** and bring it up.
+
+## Platform setup
+
+### Raspberry Pi
+
+Tested on RPi 4 Model B (8 GB), Debian 12 (Bookworm), kernel 6.6 (64-bit).
+
+1. Enable the PPS signal on a GPIO (pin 18 shown) in
+   `/boot/firmware/config.txt`:
 
     ```bash
-    sudo bash -c "echo '# GPS PPS signals Information' >> /boot/firmware/config.txt"
+    sudo bash -c "echo '# GPS PPS signal' >> /boot/firmware/config.txt"
     sudo bash -c "echo 'dtoverlay=pps-gpio,gpiopin=18' >> /boot/firmware/config.txt"
-    ``` 
+    ```
 
-2. Enable UART and set the initial baud rate. 
-
-    Note: Set baud rate for the specific GPS unit you have, if avaialble use the highest most frequently updated GPS output settings.  GPSD can parse most common GPS receiver outputs automatically and for the most part anything is better than the default 9600 NMEA.
+2. Enable the UART and set the initial baud rate to match your receiver
+   (anything is better than the 9600 NMEA default; use the highest rate
+   your module supports):
 
     ```bash
     sudo bash -c "echo 'enable_uart=1' >> /boot/firmware/config.txt"
     sudo bash -c "echo 'init_uart_baud=38400' >> /boot/firmware/config.txt"
     ```
 
-    The matching GPS speed will also need to be set on line 7 of [entrypoint.sh](./entrypoint.sh)
+   Set the matching `GPS_SPEED` in [config.env](./config.env).
+
+3. Load the `pps-gpio` module at boot:
 
     ```bash
-    GPS_SPEED="${GPS_SPEED:-38400}"
-    ```
-
-
-3. In /etc/modules, add ‘pps-gpio’ to a new line.
-
-    ```bash 
     sudo bash -c "echo 'pps-gpio' >> /etc/modules"
     ```
 
-4. Modify Device tree overlay to disable bluetooth
-
-	```bash
-	sudo bash -c "echo '# Disable Bluetooth' >> /boot/firmware/config.txt"
-	sudo bash -c "echo 'dtoverlay=disable-bt' >> /boot/firmware/config.txt"
-	```
-
-    Disable the system service that initializes the BT
+4. Free the PL011 UART from Bluetooth:
 
     ```bash
+    sudo bash -c "echo 'dtoverlay=disable-bt' >> /boot/firmware/config.txt"
     sudo systemctl disable hciuart
     ```
 
-5. Disable systemd-timesyncd service
+5. Disable the serial login shell and enable the serial port hardware:
+   `sudo raspi-config` → *3 Interface Options* → *I6 Serial Port* →
+   login shell **No** → serial hardware **Yes** → reboot.
+
+6. Wiring (UART receiver):
+   - GPS PPS → RPi pin 12 (GPIO 18)
+   - GPS VIN → RPi 5 V pin 2/4 (or 3.3 V pin 1/17)
+   - GPS GND → any RPi GND pin
+   - GPS RX → RPi UART TX pin 8 (GPIO 14)
+   - GPS TX → RPi UART RX pin 10 (GPIO 15)
+
+   ![RASPI PINOUT](https://www.raspberrypi.com/documentation/computers/images/GPIO-Pinout-Diagram-2.png?hash=df7d7847c57a1ca6d5b2617695de6d46)
+
+Typical `config.env`: `GPS_DEVICE=/dev/ttyAMA0`, `PPS_DEVICE=/dev/pps0`.
+
+### Toradex Apalis / Verdin
+
+Toradex modules expose UARTs as named device nodes (e.g.
+`/dev/apalis-uart2`, `/dev/verdin-uart1`) and take PPS input on any free
+GPIO via a `pps-gpio` device tree overlay.
+
+- **Verdin iMX8M Plus (Mallow carrier, Torizon OS)** — this repo ships a
+  ready-made overlay and step-by-step instructions:
+  - overlay source and GPIO-selection guide:
+    [device_tree_overlays/gps_pps_gpio.dts](./device_tree_overlays/gps_pps_gpio.dts)
+    and the accompanying
+    [readme](./device_tree_overlays/verdin_imx8mp_device_tree_overlays_readme.md)
+  - installing/activating the compiled `.dtbo` on Torizon OS (OSTree):
+    [device_tree_overlays/DTO_instructions.md](./device_tree_overlays/DTO_instructions.md)
+  - a GitHub Actions workflow
+    ([device_tree_overlay_build.yaml](./.github/workflows/device_tree_overlay_build.yaml))
+    builds the `.dtbo` artifact.
+- **Apalis (Ixora carrier)** — same approach: write a `pps-gpio` overlay
+  targeting a free GPIO (see Toradex's
+  [device tree overlays overview](https://developer.toradex.com/software/linux-resources/device-tree/device-tree-overlays-overview/)),
+  and connect the receiver to an Apalis UART.
+
+Typical `config.env` (Apalis): `GPS_DEVICE=/dev/apalis-uart2`,
+`PPS_DEVICE=/dev/pps1`. On Torizon OS, note that overlays live inside the
+active OSTree deployment and should be baked in with TorizonCore Builder
+for production (see the instructions above).
+
+### NVIDIA Jetson
+
+Tested on Jetson Xavier NX (a prebuilt image is published with the
+`xavier-nx` tag).
+
+1. **Serial**: a USB GNSS receiver enumerates as `/dev/ttyACM0` with no
+   extra configuration. For a UART receiver, configure the 40-pin header
+   UART with the expansion header tool:
 
     ```bash
-    sudo systemctl stop systemd-timesyncd
-    sudo systemctl disable systemd-timesyncd
+    sudo /opt/nvidia/jetson-io/jetson-io.py
     ```
 
+2. **PPS**: bind a header GPIO to the `pps-gpio` driver with a device tree
+   overlay, the same pattern as the Verdin overlay in
+   [device_tree_overlays](./device_tree_overlays/) but with
+   `compatible` and the GPIO phandle set for your Jetson module/carrier.
+   See the [Jetson Linux Developer Guide](https://docs.nvidia.com/jetson/)
+   for compiling and registering overlays, and the
+   [JetsonHacks pinout](https://jetsonhacks.com/nvidia-jetson-xavier-nx-gpio-header-pinout/)
+   for header GPIO numbering.
+3. Verify after reboot: `ls /dev/pps*` and `dmesg | grep -i pps` should
+   show the `pps-gpio` device.
 
-### 4. Enable the serial hardware port
+Typical `config.env`: `GPS_DEVICE=/dev/ttyACM0`, `PPS_DEVICE=/dev/pps0`.
 
-Run raspi-config -> 3 – Interface options -> I6 – Serial Port -> Would you like a login shell to be available over serial -> No. -> Would you like the serial port hardware to be enabled -> Yes.
+## Container configuration
 
-Reboot -> Yes
+All runtime settings live in [config.env](./config.env) — key variables:
 
-### 4. Wire up the GPS module
+| Variable | Purpose |
+|---|---|
+| `GPS_DEVICE` | GNSS receiver device node passed to gpsd |
+| `PPS_DEVICE` | kernel PPS device node |
+| `GPS_SPEED` | serial baud rate (ignored for USB CDC-ACM receivers) |
+| `ENABLE_MONITORING` / `RESTART_ON_FAILURE` | supervise gpsd/chronyd and restart them if they die |
 
-Determine the voltage requirements of your GPS module first. 
+The same device nodes must be passed through to the container in
+[compose.yaml](./compose.yaml) under `devices:`. Chrony's refclock setup is
+in [chrony_config/chrony.conf](./chrony_config/chrony.conf) — if your PPS
+node is not `/dev/pps0`, update the `refclock PPS` line there to match
+`PPS_DEVICE`.
 
-Pin connections:
+### Changing configuration or the startup script — no rebuild needed
 
-1. GPS PPS to RPi GPIO pin 12 (GPIO 18)
-2. GPS VIN to RPi 5V pin 2 or 4 (or for 3.3V pin 1 or 17)
-3. GPS GND to RPi GND pin 6,9,14,20,25,30,34 or 39
-4. GPS RX to RPi UART TX pin 8 (GPIO14)
-5. GPS TX to RPi UART RX pin 10 (GPIO15)
-
-![RASPI PINOUT](https://www.raspberrypi.com/documentation/computers/images/GPIO-Pinout-Diagram-2.png?hash=df7d7847c57a1ca6d5b2617695de6d46)
-
-### 5. Build Image
-
-```bash
-cd rpi-docker-gpsd-chrony
-```
-
-```bash
-sudo docker build -t dkaulukukui/rpi-docker-gpsd-chrony .
-```
-
-Alternatively a pre-built image (using 38400 baud) can be downloaded and installed from docker hub
-
-```bash
-sudo docker image pull dkaulukukui/rpi-docker-gpsd-chrony
-```
-
-### 6. Bring up the container
-
-The command to bring up container (attached to the stdio terminal, useful for debugging) is:
+`entrypoint.sh`, `chrony_config/`, and `config.env` are all mounted or read
+from the repo checkout when the container starts (see `volumes:` and
+`env_file:` in [compose.yaml](./compose.yaml)). After editing any of them,
+just recreate the container:
 
 ```bash
-cd rpi-docker-gpsd-chrony
+sudo docker compose up -d --force-recreate
 ```
 
-```bash 
-sudo docker compose up 
+Use `--force-recreate` rather than `docker compose restart`: single-file
+bind mounts pin the file at container-create time, so an editor that
+replaces the file can leave a plain restart running the old content.
+
+Rebuilding the image (`docker build`) is only needed when the
+[Dockerfile](./Dockerfile) itself changes (e.g. installed packages). The
+image still carries a baked-in copy of `entrypoint.sh` as a fallback, so it
+remains usable standalone without the repo checkout.
+
+## Build and run
+
+Clone and build:
+
+```bash
+git clone https://github.com/ARL-at-UH/docker-gpsd-chrony
+cd docker-gpsd-chrony
+sudo docker build -t arluhdev/docker-gpsd-chrony .
 ```
 
-The command to bring up container in the background is (RECOMMENDED):
+Or pull a prebuilt image:
 
-```bash 
+```bash
+sudo docker image pull arluhdev/docker-gpsd-chrony
+```
+
+Bring up the container attached to the terminal (useful for debugging):
+
+```bash
+sudo docker compose up
+```
+
+Or in the background (recommended):
+
+```bash
 sudo docker compose up --detach
 ```
 
-## Verficition steps
+## Verification
 
-1. Ensure that the container starts up successfully
+Follow the layered procedure in [VERIFICATION.md](./VERIFICATION.md). It
+walks from host device nodes through kernel PPS (`ppstest`), gpsd fix
+status (`cgps`, `gpspipe`), the gpsd→chrony shared-memory handoff, chrony
+lock (`chronyc sources` / `chronyc tracking`), and finally NTP service to
+network clients — with expected outputs, pass criteria, and a
+troubleshooting matrix.
 
-    Monitor docker console logs for any error messages.  Successful container start up should look similar to the below: 
+The short version of a healthy system:
 
-<Insert Image of Console output showing successful container startup>
+```bash
+sudo docker exec -it gpsd-chrony chronyc sources
+```
 
+```
+MS Name/IP address         Stratum Poll Reach LastRx Last sample
+===============================================================================
+#x NMEA                          0   0   377     0    +87ms[  +87ms] +/- 1000us
+#* PPS                           0   3   377    10   -310ns[   +9ns] +/-   13ms
+```
 
-2. Check GPSD 
+`#*` on the PPS line means chrony is locked to the pulse-per-second
+signal. (`x` on the NMEA line is normal — serial NMEA time is jittery and
+chrony correctly rejects it for steering while still using it to number
+the PPS pulses.)
 
-    - If opened as attached, open a new terminal window.
-    
-    - Attach container terminal 
+## Calibration
 
-        ```bash
-        sudo docker exec -it gpsd-chrony bash
-        ```
+Once verification passes, perform offset calibration and fine tuning:
+[calibration/CHRONY_OFFSET_CALIBRATION.md](calibration/CHRONY_OFFSET_CALIBRATION.md)
 
-    - Verify PPS signal.
+## To do
 
-        ```bash
-        sudo ppstest /dev/pps0 
-        ```
-
-        - Successful PPS connectivity should look like the below
-
-            ```bash
-            trying PPS source "/dev/pps0"
-            found PPS source "/dev/pps0"
-            ok, found 1 source(s), now start fetching data...
-            source 0 - assert 1739485509.000083980, sequence: 100 - clear  0.000000000, sequence: 0
-            source 0 - assert 1739485510.000083988, sequence: 101 - clear  0.000000000, sequence: 0
-            source 0 - assert 1739485511.000083348, sequence: 102 - clear  0.000000000, sequence: 0
-            source 0 - assert 1739485512.000086343, sequence: 103 - clear  0.000000000, sequence: 0
-            ```
-
-    - Verify GPS data
-
-
-
-        - Example of GPS data being recieved and shown with gpsmon
-
-        ```bash
-        gpsmon
-        ```
-
-        ```bash
-        lqqqqqqqqqqqqqqqqqqqqqqqqqqklqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk _minor":15}
-        xCh PRN  Az  El S/N FLAG U xxECEF Pos:            m            m            m x ver":"u-blox","sernum":"2b41ba159f"
-        x 0   1 313  22  43 191f Y xxECEF Vel:          m/s          m/s          m/s x 60,FWVER=HPG 1.32,PROTVER=27.31,MOD
-        x 1   2 340  43  36 191f Y xx                                                 x s":1,"native":1,"bps":38400,"parity
-        x 2   3 261  29  29 191f Y xxLTP Pos:                                       m x pps0","driver":"PPS","activated":"2
-        x 3   4 204   5   0 1211   xxLTP Vel:        m/s      o                       x
-        x 4   8 283  72  25 191c Y xx                                                 x false,"timing":false,"split24":fals
-        x 5  10  40  17  32 191f Y xxTime:                                            x
-        x 6  16 188  13   0 1211   xxTime GPS:                     Day:               x
-        x 7  27 164  60  18 191c Y xx                                                 x
-        x 8  28 116  12   0 1211   xxEst Pos Err       m Est Vel Err       m/s        x
-        x 9  31 144  10   0 1211   xxPRNs: 20 PDOP:  1.4 Fix 0x..                     x
-        x10  32  54  42  31 191f Y xmqqqqqqqqqqqqqqqqqqqqq NAV qqqqqqqqqqqqqqqqqqqqqqqj
-        x11 129 265   5   0 0701   xlqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk
-        x12 131 113  38   0 0701   xxDOP [H]      [V]      [P]      [T]      [G]      x
-        x13 133 123  49   0 0701   xmqqqqqqqqqqqqqqqqqqq NAV_DOP qqqqqqqqqqqqqqqqqqqqqj
-        x14 212 307   7   0 1211   xlqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk
-        x15 214  91  58  20 191c Y xxTOFF:  0.086981486       PPS: -0.000000396       x
-        mqqqqqq NAV-SAT qqqqqqqqqqqjmqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqj
-        ```
-
-
-
-        - Example of GPS data being received and shown with CGPS
-
-        ```bash
-        cgps
-        ```
-
-        ```bash
-        lqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqklqqqqqqqqqqqqqqqqSeen 38/Used 19qqk
-        x Time         2025-06-06T00:09:12.000Z (18)xxGNSS  S PRN  Elev  Azim   SNR Usex
-        x Latitude          21.30927740 N           xxGP  1     1  23.0 314.0  44.0  Y x
-        x Longitude        157.80876950 W           xxGP  2     2  43.0 341.0  36.0  Y x
-        x Alt (HAE, MSL)     188.668,    179.754 ft xxGP  3     3  29.0 261.0  27.0  Y x
-        x Speed              0.11               mph xxGP  8     8  73.0 280.0  24.0  Y x
-        x Track (true, var)     327.0,   9.4    deg xxGP 10    10  17.0  41.0  27.0  Y x
-        x Climb              8.86            ft/min xxGP 27    27  59.0 164.0  13.0  Y x
-        x Status          3D FIX (7 secs)           xxGL  2    66  31.0 209.0  18.0  Y x
-        x Long Err  (XDOP, EPX)   0.42, +/- 19.7 ft xxGL  8    72  35.0  25.0  32.0  Y x
-        x Lat Err   (YDOP, EPY)   0.48, +/- 23.6 ft xxGL 22    86  18.0 113.0  25.0  Y x
-        x Alt Err   (VDOP, EPV)   1.22, +/- 18.7 ft xxGL 23    87  49.0  71.0  22.0  Y x
-        x 2D Err    (HDOP, CEP)   0.63, +/- 12.1 ft xxGL 24    88  32.0 344.0  41.0  Y x
-        x 3D Err    (PDOP, SEP)   1.38, +/-  105 ft xxQZ  2   194  26.0 285.0  42.0  Y x
-        x Time Err  (TDOP)        0.77              xxQZ  3   195  22.0 294.0  44.0  Y x
-        x Geo Err   (GDOP)        1.58              xxGA  4   304  58.0  90.0  27.0  Y x
-        x Speed Err (EPS)            +/- 32.2 mph   xxGA 10   310  46.0  39.0  18.0  Y x
-        x Track Err (EPD)         n/a               xxGA 11   311  46.0 356.0  36.0  Y x
-        x Time offset             0.554616724     s xxGA 16   316  28.0 231.0  10.0  Y x
-        x Grid Square             BL11ch24wf        xxGA 25   325  28.0 258.0  29.0  Y x
-        x ECEF X, VX  -18059130.879 ft   -0.033 ft/sxxGA 36   336  16.0 308.0  38.0  Y x
-        x ECEF Y, VY   -7366570.594 ft   -0.098 ft/sxxGP  4     4   6.0 204.0   0.0  N x
-        x ECEF Z, VZ    7556926.370 ft   -0.131 ft/sxxGP 16    16  12.0 187.0  20.0  N x
-        mqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqjmMore...qqqqqqqqqqqqqqqqqqqqqqqqqqj
-        ```
-
-
-3. Check Chrony
-
-    - Verify Chrony is seeing both the GPS and 1 PPS signals as valid and is using 1 PPS
-
-        ```bash
-        chronyc sources
-        ```
-
-        - Good Syncing with GPS and 1PPS 
-
-        ```bash
-        aa24e5ed30b7:/# chronyc sources
-        MS Name/IP address         Stratum Poll Reach LastRx Last sample
-        ===============================================================================
-        #x NMEA                          0   0   377     0    +87ms[  +87ms] +/- 1000us
-        #* PPS                           0   3   377    10   -310ns[   +9ns] +/-   13ms
-        ```
-
-
-    - Verify that chrony is tracking and updating the system clock
-
-        ```bash
-        chronyc tracking
-        ```
-
-        - Good tracking data output
-
-        ```bash
-        aa24e5ed30b7:/# chronyc tracking
-        Reference ID    : 50505300 (PPS)
-        Stratum         : 1
-        Ref time (UTC)  : Fri Jun 06 00:05:35 2025
-        System time     : 0.000000374 seconds fast of NTP time
-        Last offset     : +0.000000443 seconds
-        RMS offset      : 0.003629697 seconds
-        Frequency       : 11.747 ppm fast
-        Residual freq   : -0.012 ppm
-        Skew            : 0.090 ppm
-        Root delay      : 0.000000001 seconds
-        Root dispersion : 0.007316423 seconds
-        Update interval : 8.0 seconds
-        Leap status     : Normal
-        ```
-
-	[Chronyc Tracking Field Explanation](https://chrony-project.org/doc/3.3/chronyc.html)
-
-
-4. Verify System time
-
-    ```bash
-    date
-    ```
-
-5. Perform additional offset calbiration and fine tuning
-
-   Follow calibration README instructions found in [Calibration Procedure](calibration/CHRONY_OFFSET_CALIBRATION.md)
-			
-## To do: 
-- dial back docker --privlidged flag and make sure everything still works
-
+- dial back the docker `privileged` flag and make sure everything still works

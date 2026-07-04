@@ -14,11 +14,12 @@ services:
         cap_add:
             - SYS_TIME
         privileged: true
-        image: dkaulukukui/rpi-docker-gpsd-chrony
+        image: arluhdev/docker-gpsd-chrony:latest
         volumes:
             - chrony_logs:/var/log/chrony
             - chrony_drift:/var/lib/chrony
             - ./chrony_config:/etc/chrony
+            - ./entrypoint.sh:/entrypoint.sh:ro
 
 volumes:
     chrony_logs:

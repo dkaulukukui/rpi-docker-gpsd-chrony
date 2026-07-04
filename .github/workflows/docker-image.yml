@@ -1,8 +1,7 @@
 name: Build & Push Docker Image
 
 on: workflow_dispatch
-  
-  
+
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
@@ -20,12 +19,25 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
+      # Generates Docker Hub tags from the git ref:
+      #   - branch name, sanitized to a valid Docker tag (e.g. feature/foo -> feature-foo)
+      #   - commit sha, for traceability
+      #   - "latest", only when building the default branch (main)
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
+          tags: |
+            type=ref,event=branch
+            type=raw,value=${{ github.sha }}
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: build_push
         uses: docker/build-push-action@v5
         with:
           platforms: linux/arm64
           context: .
           push: true
-          tags: >
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }},
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

@@ -39,6 +39,7 @@
 *.csv
 *.kml
 *.tflite
+.claude/
 
 # Profile outputs
 *.prof

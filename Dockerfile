@@ -5,9 +5,7 @@ FROM alpine:3.22
 ARG BUILD_DATE
 
 # first, a bit about this container
-LABEL org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.authors="Donald Kaulukukui donald.kaulukukui@arl.hawaii.edu" \
-      org.opencontainers.image.documentation=https://github.com/dkaulukukui/rpi-docker-gpsd-chrony
+LABEL org.opencontainers.image.created="${BUILD_DATE}" 
 
 # Update apk repositories and install gpsd
 RUN apk update && \
